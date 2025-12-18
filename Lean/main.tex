@@ -1,0 +1,1007 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{csquotes}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{amsmath}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+\newcommand{\Lean}{\texttt{Lean 4}}
+\newcommand{\Mathlib}{\texttt{mathlib4}}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+
+\lstdefinelanguage{lean}{
+  morekeywords={
+    import,namespace,end,open,universe,variable,structure,where,deriving,
+    def,theorem,lemma,example,macro,macro_rules,syntax,by,match,with,
+    induction,cases,constructor,exact,intro,have,show,if,then,else,
+    some,none,simp,apply,rw
+  },
+  sensitive=true,
+  morecomment=[l]{--},
+  morestring=[b]"
+}
+
+\lstset{
+  language=lean,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{gray!70!black},
+  stringstyle=\color{teal!60!black},
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{black!20},
+  xleftmargin=0.5em,
+  xrightmargin=0.5em
+}
+
+\title{Metaprogramming for Software Correctness and Verification in Lean\\
+\large Logic and Computation for Mathematicians Final Project}
+\author{Student Name}
+\date{December 2025}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This project explores the application of metaprogramming techniques in \Lean{} to enhance software verification and correctness efforts.
+The work encompasses the implementation of verified data structures and algorithms, beginning with stacks and queues before progressing to insertion sort on lists.
+For each implementation, formal correctness properties are established through rigorous proofs, followed by the development of custom macros that automate recurring proof patterns.
+The metaprogramming approach includes both tactic macros that expand into sequences of proof steps and command macros that generate complete theorem declarations.
+The central thesis demonstrates that metaprogramming transcends mere convenience, representing a critical enabler for practical and maintainable verified software development at scale.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+Contemporary discourse in formal methods emphasizes the persistent challenge of bridging the gap between informal mathematical reasoning and mechanized verification.
+While algorithms may appear manifestly correct through intuitive analysis, actual implementations harbor subtle defects including off by one errors, unhandled edge cases and violated implicit assumptions.
+Software verification addresses this epistemic gap by expressing correctness properties as formal specifications and mechanically validating that implementations satisfy these specifications \cite{hitchhikers}.
+
+However, traditional verification methodologies encounter a significant practical limitation.
+The process of constructing proofs within theorem proving environments proves extraordinarily tedious and repetitive in nature.
+When identical proof patterns recur across numerous contexts, the conventional approach necessitates duplicating and adapting the same tactic sequences with minor modifications.
+This methodology suffers from both error susceptibility and degraded code comprehensibility, creating substantial maintenance burdens.
+
+Metaprogramming offers a compelling solution to this challenge.
+The fundamental concept involves writing code that generates code automatically.
+Within the theorem proving domain, this translates to crafting macros and tactics that synthesize proof scripts.
+\Lean{} provides a sophisticated metaprogramming infrastructure enabling language extension through custom syntax and automation primitives \cite{metaprogrammingbook,leanmacrosref,metaprogrammingbookmacros}.
+
+\subsection{Project objectives and scope}
+
+This investigation pursues two interconnected objectives.
+The primary goal involves developing proficiency in verified code construction within \Lean{} through two representative case studies: fundamental data structures (stacks and queues) and a canonical algorithm (insertion sort).
+The secondary objective examines how metaprogramming techniques enhance verification practicality by constructing custom macros that automate repetitive proof components.
+
+The implementation comprises two principal files.
+
+\begin{itemize}
+\item \textbf{\texttt{stacks\&queues.lean}}: contains definitions for stack and queue structures accompanied by correctness lemmas and multiple metaprogramming demonstrations including both tactic and command macros.
+\item \textbf{\texttt{InsertionSortProof.lean}}: implements insertion sort over lists of natural numbers with comprehensive correctness proofs establishing sortedness and permutation properties, supplemented by an alternative proof formulation leveraging custom macros.
+\end{itemize}
+
+\subsection{Formal correctness specifications}
+
+Within the context of this work, correctness denotes satisfaction of a formal specification.
+For data structures such as stacks and queues, specifications typically consist of equational axioms describing operational interactions.
+Consider the canonical example: pushing an element onto a stack followed immediately by a pop operation must yield both the original element and the unmodified stack state.
+
+Sorting algorithm correctness demands dual properties.
+
+\begin{itemize}
+\item \textbf{Sortedness}: the output list maintains ordering according to a designated comparison relation.
+\item \textbf{Permutation}: the output list contains precisely the same element multiset as the input list.
+\end{itemize}
+
+Both properties prove essential for complete correctness.
+Sortedness alone permits trivial implementations returning empty lists.
+Permutation alone allows identity functions that preserve disorder.
+The conjunction of these properties captures the complete semantic requirements for correct sorting behavior.
+
+\subsection{The essential role of metaprogramming in verification}
+
+Initial impressions might characterize metaprogramming as merely abbreviating proof length or enhancing convenience.
+Deeper analysis reveals its fundamental necessity for practical verification endeavors.
+Three compelling rationales support this position.
+
+\textbf{First, metaprogramming reduces proof defects through controlled reuse.}
+Manual repetition of identical proof patterns across multiple contexts invites errors.
+Transcription mistakes, omitted steps or incorrectly ordered tactic applications frequently occur.
+Encapsulating patterns within macros enforces correctness through singular implementation, with subsequent invocations guaranteed to replicate validated behavior.
+
+\textbf{Second, metaprogramming establishes abstraction boundaries within proof code.}
+Proof scripts in theorem provers frequently degenerate into lengthy sequences of low level tactic invocations.
+Macros provide named abstractions for common patterns, enabling treatment as higher level operations.
+This transformation dramatically improves proof script comprehensibility and long term maintainability.
+
+\textbf{Third, metaprogramming enables verification at meaningful scale.}
+Realistic verification projects involve hundreds of related definitions requiring similar lemma families.
+Manual construction of exhaustive proof collections proves infeasible.
+Command macros facilitate automatic generation of theorem families, representing the exclusive viable approach for large scale verification efforts.
+
+\section{Background: Lean architecture and metaprogramming foundations}
+
+\subsection{Lean as a unified programming and proving environment}
+
+\Lean{} functions simultaneously as a functional programming language and an interactive theorem prover.
+The system builds upon dependent type theory, wherein types may depend on values and propositions receive representation as types.
+Under this paradigm, proofs constitute terms inhabiting proposition types.
+This design yields a unified framework where executable code and formal proofs coexist within a common language, subject to verification by a singular type checker.
+
+The implementation leverages several key architectural features.
+
+\textbf{Induction and pattern matching.}
+Proofs concerning recursive data structures like lists predominantly employ induction over structural recursion.
+\Lean{} facilitates this through the \texttt{induction} tactic, which generates subgoals corresponding to each constructor in the type definition.
+
+\textbf{The \texttt{simp} simplification tactic.}
+The \texttt{simp} tactic performs goal rewriting using designated lemma collections.
+Users control definition unfolding by specifying identifier lists.
+This mechanism represents one of \Lean{}'s most powerful features, automatically handling substantial routine simplification work.
+
+\textbf{The \texttt{omega} arithmetic decision procedure.}
+Goals involving linear arithmetic over natural numbers or integers often admit automatic resolution via the \texttt{omega} tactic.
+This work employs \texttt{omega} extensively for resolving arithmetic contradictions, such as deriving \(x \le y\) under the assumption \(\neg(x \le y)\).
+
+\textbf{The \Mathlib{} mathematical library.}
+\Mathlib{} comprises an extensive formalized mathematics library for \Lean{}.
+This project primarily utilizes the \texttt{List.Perm} relation, which formally captures list permutation semantics.
+
+\subsection{Metaprogramming paradigms in Lean}
+
+Metaprogramming within \Lean{} entails writing \Lean{} code that manipulates \Lean{} syntax structures.
+While \Lean{} supports multiple metaprogramming sophistication levels, this investigation concentrates on macro systems.
+
+A macro constitutes a syntax transformation applied prior to elaboration.
+When the \Lean{} parser encounters macro invocations, expansion proceeds according to macro definitions.
+The resulting expanded syntax undergoes processing identically to direct user input.
+
+Two principal macro varieties appear in this work.
+
+\textbf{Tactic macros.}
+These macros expand into tactic sequences, effectively creating custom tactics through composition of existing primitives.
+For instance, a tactic macro named \texttt{solve\_base\_case} might expand to \texttt{simp [def1, def2]}.
+Proof scripts then invoke \texttt{solve\_base\_case} rather than repeatedly typing complete \texttt{simp} invocations.
+
+\textbf{Command macros.}
+These macros expand into top level declarations including definitions or theorems.
+Command macros enable automatic generation of repetitive declarations.
+When numerous data structures require analogous correctness lemmas, a command macro accepting names as parameters can generate appropriate theorem statements and proofs automatically.
+
+\subsection{Syntax quotation and antiquotation mechanisms}
+
+The fundamental technique for macro construction in \Lean{} involves syntax quotation.
+The expression \texttt{`(tactic| simp [foo, bar])} employs backtick and vertical bar notation to construct quoted syntax fragments.
+These quotations are not strings but actual syntax trees subject to subsequent elaboration.
+
+Antiquotation permits argument interpolation within quotations using dollar sign notation.
+Given a macro parameter \texttt{h:term}, the splice \texttt{\$h} inserts this term into the quotation context.
+This mechanism enables generic template construction accepting diverse inputs.
+
+Comprehensive syntax documentation appears in the \Lean{} metaprogramming book and reference manual \cite{metaprogrammingbook,metaprogrammingbookmacros,leanmacrosref}.
+Practical mastery emerges primarily through example study and systematic experimentation.
+
+\section{Case study 1: Verified stacks and queues with metaprogramming}
+
+The investigation commences with stacks and queues, selected for their conceptual simplicity enabling straightforward verification while providing sufficient complexity to demonstrate metaprogramming benefits.
+
+\subsection{Data structure implementations}
+
+A stack implements last in first out semantics through a wrapper around list structures.
+
+\begin{lstlisting}[caption={Stack definition from \texttt{stacks\&queues.lean}}]
+structure Stack (α : Type u) :=
+  (data : List α)
+deriving Repr
+
+namespace Stack
+
+def empty : Stack α := ⟨[]⟩
+
+def push (x : α) (s : Stack α) : Stack α :=
+  ⟨x :: s.data⟩
+
+def pop (s : Stack α) : Option (α × Stack α) :=
+  match s.data with
+  | [] => none
+  | x :: xs => some (x, ⟨xs⟩)
+
+end Stack
+\end{lstlisting}
+
+The \texttt{push} operation prepends elements to the underlying list structure.
+The \texttt{pop} operation employs pattern matching on the list.
+Empty lists yield \texttt{none}, while non-empty lists with head \texttt{x} and tail \texttt{xs} produce \texttt{some (x, ⟨xs⟩)}, representing the popped element paired with the residual stack.
+
+Queue implementations mirror stack structure for pedagogical purposes.
+Production implementations would optimize rear insertion efficiency, but this work prioritizes metaprogramming concept demonstration over performance optimization.
+
+\begin{lstlisting}[caption={Queue definition exhibiting structural similarity to Stack}]
+structure Queue (α : Type u) :=
+  (data : List α)
+deriving Repr
+
+namespace Queue
+
+def push (x : α) (q : Queue α) : Queue α :=
+  ⟨x :: q.data⟩
+
+def pop (q : Queue α) : Option (α × Queue α) :=
+  match q.data with
+  | [] => none
+  | x :: xs => some (x, ⟨xs⟩)
+
+end Queue
+\end{lstlisting}
+
+\subsection{Correctness specification: pop after push invariant}
+
+The fundamental correctness property for both structures asserts that pushing an element followed immediately by popping must recover the original element and unmodified structure state.
+For stacks, this property receives formal expression as:
+
+\begin{lstlisting}[caption={Stack correctness theorem}]
+theorem pop_push (x : α) (s : Stack α) :
+  Stack.pop (Stack.push x s) = some (x, s) := by
+  simp [Stack.push, Stack.pop]
+\end{lstlisting}
+
+Detailed examination of this theorem reveals its semantic content.
+The type signature universally quantifies over any type \texttt{α}, element \texttt{x : α} and stack \texttt{s : Stack α}, establishing the equation's validity.
+Pushing \texttt{x} onto \texttt{s} produces a new stack, and popping this new stack must yield \texttt{some (x, s)}.
+
+The proof comprises a single line: \texttt{simp [Stack.push, Stack.pop]}.
+This instructs \Lean{} to simplify the goal through \texttt{Stack.push} and \texttt{Stack.pop} definition unfolding.
+The simplification proceeds through well-defined stages.
+
+\textbf{Initial state.} The goal begins as \texttt{Stack.pop (Stack.push x s) = some (x, s)}.
+
+\textbf{Push expansion.} Unfolding \texttt{Stack.push} reveals that \texttt{s} possesses type \texttt{Stack α}, defined as a single-field structure.
+The notation \texttt{s.data} denotes the underlying list.
+The \texttt{push} definition \texttt{⟨x :: s.data⟩} transforms the goal to \texttt{Stack.pop ⟨x :: s.data⟩ = some (x, s)}.
+
+\textbf{Pop expansion.} Unfolding \texttt{Stack.pop} exposes pattern matching on the underlying list.
+Given list form \texttt{x :: s.data}, matching selects the non-empty branch, yielding \texttt{some (x, ⟨s.data⟩)}.
+The goal becomes \texttt{some (x, ⟨s.data⟩) = some (x, s)}.
+
+\textbf{Definitional equality.} The expression \texttt{⟨s.data⟩} maintains definitional equality with \texttt{s} because \texttt{Stack} comprises a single-field structure.
+The goal reduces to \texttt{some (x, s) = some (x, s)}, trivially satisfied by reflexivity.
+
+This exemplifies proofs that are conceptually trivial yet require precise knowledge of appropriate definition unfolding sequences.
+The \texttt{simp} tactic automates this entire process.
+
+The queue variant exhibits identical structure.
+
+\begin{lstlisting}[caption={Queue correctness theorem}]
+theorem queue_pop_push (x : α) (q : Queue α) :
+  Queue.pop (Queue.push x q) = some (x, q) := by
+  simp [Queue.push, Queue.pop]
+\end{lstlisting}
+
+\subsection{Tactic macro: \texttt{stacks}}
+
+Despite consisting of a single line, the pattern \texttt{simp [Stack.push, Stack.pop]} recurs across multiple proof contexts during development.
+This motivates encapsulation within a tactic macro.
+
+\begin{lstlisting}[caption={The \texttt{stacks} tactic macro}]
+macro "stacks" : tactic =>
+  `(tactic| simp [Stack.push, Stack.pop])
+\end{lstlisting}
+
+Syntactic analysis reveals the macro structure.
+The \texttt{macro} keyword initiates macro declaration.
+The string \texttt{"stacks"} defines new syntax being introduced.
+The annotation \texttt{: tactic} specifies expansion into tactic syntax.
+The right-hand side following \texttt{=>} provides the expansion template.
+Backtick and \texttt{(tactic| ...)} notation construct syntax quotations for tactic blocks.
+The quotation interior contains the desired \texttt{simp} invocation.
+
+This enables rewriting the \texttt{pop\_push} theorem using macro syntax.
+
+\begin{lstlisting}[caption={Employing the \texttt{stacks} macro}]
+theorem pop_push (x : α) (s : Stack α) :
+  Stack.pop (Stack.push x s) = some (x, s) := by
+  stacks
+\end{lstlisting}
+
+\Lean{} expansion of \texttt{stacks} produces \texttt{simp [Stack.push, Stack.pop]} prior to elaboration.
+Semantic equivalence remains perfect while naming the pattern enhances expressiveness.
+
+The macro provides multiple advantages.
+First, proof scripts achieve improved brevity and readability.
+Rather than parsing \texttt{simp} invocations with identifier lists, readers encounter descriptive names conveying tactical intent.
+Second, subsequent implementation modifications or lemma additions require only macro definition updates.
+All proofs invoking the macro automatically inherit changes, preventing inconsistency.
+
+\subsection{Tactic macro: \texttt{queues}}
+
+An analogous macro serves queue verification.
+
+\begin{lstlisting}[caption={The \texttt{queues} tactic macro}]
+macro "queues" : tactic =>
+  `(tactic| simp [Queue.push, Queue.pop])
+\end{lstlisting}
+
+Application within queue proofs follows naturally.
+
+\begin{lstlisting}[caption={Employing the \texttt{queues} macro}]
+theorem queue_pop_push (x : α) (q : Queue α) :
+  Queue.pop (Queue.push x q) = some (x, q) := by
+  queues
+\end{lstlisting}
+
+Skeptics might question macro utility for single-line proofs.
+The rationale becomes apparent at scale.
+Production verification projects involve numerous operations on stacks and queues, each requiring multiple lemmas.
+Each lemma potentially needs identical \texttt{simp} sets for definition unfolding.
+With 20 lemmas requiring \texttt{simp [Stack.push, Stack.pop, Stack.empty, Stack.size, ...]} featuring extensive identifier lists, error likelihood escalates.
+Identifier omissions or name misspellings become probable.
+Macro centralization eliminates this vulnerability through single-point-of-truth establishment.
+
+\subsection{Command macro: \texttt{mk\_pop\_push}}
+
+Command-level metaprogramming generates complete theorems automatically.
+Observation reveals that \texttt{pop\_push} for stacks and \texttt{queue\_pop\_push} for queues share identical structure, differing only in type and operation names.
+
+This motivates a command macro accepting these names as parameters and generating appropriate theorems.
+
+\begin{lstlisting}[caption={The \texttt{mk\_pop\_push} command macro}]
+macro "mk_pop_push " T:ident push:ident pop:ident thm:ident : command =>
+  `(
+    theorem $thm {α} (x : α) (s : $T α) :
+      $pop ($push x s) = some (x, s) := by
+      simp [$push:ident, $pop:ident]
+  )
+\end{lstlisting}
+
+This macro exhibits greater complexity, warranting detailed analysis.
+
+The declaration line specifies four identifier parameters.
+The identifier \texttt{T} represents the type constructor name (such as \texttt{Stack} or \texttt{Queue}).
+The identifier \texttt{push} denotes the push operation name.
+The identifier \texttt{pop} denotes the pop operation name.
+The identifier \texttt{thm} specifies the desired theorem name.
+
+The annotation \texttt{: command} indicates expansion into top level commands rather than tactics.
+
+The right-hand side quotes a theorem declaration.
+Backtick and parentheses establish quotation boundaries.
+Dollar signs perform antiquotation, splicing macro arguments into the template.
+
+Consider the expansion process for a concrete invocation.
+
+\begin{lstlisting}[caption={Command macro invocation for Stack}]
+mk_pop_push Stack Stack.push Stack.pop stack_correct
+\end{lstlisting}
+
+\Lean{} parsing recognizes \texttt{mk\_pop\_push} macro syntax, binding \texttt{T} to \texttt{Stack}, \texttt{push} to \texttt{Stack.push}, \texttt{pop} to \texttt{Stack.pop} and \texttt{thm} to \texttt{stack\_correct}.
+Quotation expansion proceeds via substitution of these bindings.
+
+Post-expansion code becomes:
+
+\begin{lstlisting}[caption={Macro-generated code}]
+theorem stack_correct {α} (x : α) (s : Stack α) :
+  Stack.pop (Stack.push x s) = some (x, s) := by
+  simp [Stack.push, Stack.pop]
+\end{lstlisting}
+
+This precisely matches the desired theorem specification.
+Queue variants follow identically.
+
+\begin{lstlisting}[caption={Command macro invocation for Queue}]
+mk_pop_push Queue Queue.push Queue.pop queue_correct
+\end{lstlisting}
+
+Expansion yields:
+
+\begin{lstlisting}[caption={Generated Queue theorem}]
+theorem queue_correct {α} (x : α) (s : Queue α) :
+  Queue.pop (Queue.push x s) = some (x, s) := by
+  simp [Queue.push, Queue.pop]
+\end{lstlisting}
+
+Two macro invocations generate two complete correctness theorems.
+
+\subsection{Implications for large scale verification}
+
+While this example appears modest, it illustrates profound principles for verification scalability.
+
+Production verification projects encompass dozens of data structures following analogous patterns.
+Collections might include stacks, queues, deques, priority queues, hash tables and additional structures.
+Each structure requires a family of basic correctness lemmas relating operations.
+
+Manual lemma construction for all structures proves prohibitively time consuming and error prone.
+Without automation, different lemmas may exhibit subtle statement variations despite structural equivalence.
+Proof scripts might employ inconsistent tactic orderings despite underlying reasoning identity.
+These inconsistencies compromise codebase comprehensibility and maintainability.
+
+Command macros enforce uniformity through pattern encoding singularity.
+Macro definitions capture patterns once.
+Pattern instantiation for each data structure then proceeds automatically.
+Error reduction follows from correctness requirement singularity.
+Navigation simplification emerges from pattern consistency across instances.
+
+This mirrors fundamental motivations for functions or classes in conventional programming.
+Copy-pasting identical logic 20 times violates sound engineering principles.
+Factorization and reuse represent superior approaches.
+Metaprogramming extends these principles to proofs and specifications, transcending mere executable code.
+
+\section{Case study 2: Verified insertion sort with metaprogramming}
+
+The second case study examines insertion sort, representing a more sophisticated algorithm than stack/queue operations with correspondingly complex correctness proofs.
+Increased proof complexity amplifies repetition opportunities, enhancing metaprogramming value proposition.
+
+\subsection{Insertion sort algorithm structure}
+
+Insertion sort constructs sorted lists incrementally, inserting each input element into its correct position within a growing sorted list.
+
+The implementation decomposes into two functions.
+Function \texttt{insert} accepts an element and a sorted list, inserting the element at the appropriate position.
+Function \texttt{insertionSort} sorts lists by recursively sorting tails and inserting heads into sorted tails.
+
+\begin{lstlisting}[caption={Insertion sort implementation}]
+def insert (x : Nat) : List Nat → List Nat
+| [] => [x]
+| y :: ys =>
+    if x ≤ y then
+      x :: y :: ys
+    else
+      y :: insert x ys
+
+def insertionSort : List Nat → List Nat
+| [] => []
+| x :: xs => insert x (insertionSort xs)
+\end{lstlisting}
+
+Operational semantics of \texttt{insert} proceed as follows.
+Empty lists produce singleton lists containing \texttt{x}.
+Non-empty lists with head \texttt{y} and tail \texttt{ys} trigger comparison of \texttt{x} and \texttt{y}.
+When \texttt{x ≤ y} holds, \texttt{x} belongs at the front, yielding \texttt{x :: y :: ys}.
+Otherwise, \texttt{y} belongs at the front, necessitating recursive \texttt{x} insertion into \texttt{ys} with \texttt{y} consed onto results.
+
+Function \texttt{insertionSort} exhibits simpler structure.
+Empty lists are already sorted, returned unchanged.
+Non-empty lists \texttt{x :: xs} undergo recursive \texttt{xs} sorting, with \texttt{x} subsequently inserted into the sorted result.
+
+\subsection{Sortedness predicate formalization}
+
+Correctness reasoning requires formalizing sorted list properties.
+The predicate \texttt{isSorted} captures nondecreasing order requirements.
+
+\begin{lstlisting}[caption={The \texttt{isSorted} predicate}]
+def isSorted : List Nat → Prop
+| [] => True
+| [_] => True
+| a :: b :: rest => a ≤ b ∧ isSorted (b :: rest)
+\end{lstlisting}
+
+This definition encompasses three cases via pattern matching.
+Empty lists satisfy sortedness definitionally.
+Singleton lists satisfy sortedness definitionally.
+Lists with at least two elements \texttt{a} and \texttt{b} satisfy sortedness when \texttt{a ≤ b} holds and the tail beginning from \texttt{b} recursively satisfies sortedness.
+
+The recursive definition parallels list structure, facilitating proofs through simultaneous pattern matching on list and \texttt{isSorted} structures.
+
+\subsection{Correctness theorem 1: sortedness preservation}
+
+The first correctness theorem establishes that \texttt{insertionSort} produces sorted lists.
+
+\begin{lstlisting}[caption={Sortedness theorem}]
+theorem insertionSort_sorted (xs : List Nat) :
+    isSorted (insertionSort xs) := by
+  induction xs with
+  | nil =>
+      simp [insertionSort, isSorted]
+  | cons x xs ih =>
+      simp [insertionSort]
+      exact insert_preserves_sorted (insertionSort xs) x ih
+\end{lstlisting}
+
+The proof employs induction on list \texttt{xs}.
+Base case analysis for empty \texttt{xs} observes that \texttt{insertionSort []} simplifies to \texttt{[]}, satisfying sortedness definitionally.
+The \texttt{simp} tactic automates this reasoning.
+
+Inductive step analysis considers \texttt{xs = x :: xs'} with tail \texttt{xs'}.
+Induction hypothesis \texttt{ih} asserts \texttt{isSorted (insertionSort xs')}.
+Definitionally, \texttt{insertionSort (x :: xs')} expands to \texttt{insert x (insertionSort xs')}.
+The goal transforms to establishing \texttt{isSorted (insert x (insertionSort xs'))}.
+
+This follows from the lemma \texttt{insert\_preserves\_sorted}, asserting that element insertion into sorted lists preserves sortedness.
+The lemma and its proof merit detailed examination.
+
+\begin{lstlisting}[caption={Key lemma establishing insertion preserves sortedness}]
+lemma insert_preserves_sorted (xs : List Nat) (x : Nat)
+    (h_sorted : isSorted xs) : isSorted (insert x xs) := by
+  induction xs with
+  | nil =>
+      simp [insert, isSorted]
+  | cons y ys ih =>
+      cases ys with
+      | nil =>
+          by_cases hxy : x ≤ y
+          · simp [insert, hxy, isSorted]
+          · simp [insert, hxy, isSorted]
+            omega
+      | cons z zs =>
+          by_cases hxy : x ≤ y
+          · simp [insert, hxy, isSorted]
+            exact h_sorted
+          · have h1 : y ≤ z := h_sorted.left
+            have h2 : isSorted (z :: zs) := h_sorted.right
+            simp [insert, hxy]
+            by_cases hxz : x ≤ z
+            · simp [hxz, isSorted]
+              constructor
+              · omega
+              · exact h_sorted.right
+            · simp only [hxz, ite_false, isSorted]
+              have ih_result := ih h2
+              simp only [insert, hxz, ite_false] at ih_result
+              exact ⟨h1, ih_result⟩
+\end{lstlisting}
+
+Proof length reflects extensive case analysis requirements.
+The overall structure employs induction on \texttt{xs}.
+
+Base case analysis for empty \texttt{xs} notes that \texttt{insert x []} reduces to \texttt{[x]}, manifestly sorted.
+
+Inductive case analysis for \texttt{xs = y :: ys} performs case splitting on \texttt{ys} structure.
+When \texttt{ys} is empty, \texttt{xs = [y]} forms a singleton.
+Case splitting on \texttt{x ≤ y} produces two branches.
+When \texttt{x ≤ y} holds, \texttt{insert x [y]} yields \texttt{[x, y]}, sorted by hypothesis.
+When \texttt{x ≤ y} fails, \texttt{insert x [y]} yields \texttt{[y, x]}.
+Sortedness requires \texttt{y ≤ x}, derivable from \texttt{¬(x ≤ y)} via \texttt{omega}.
+
+When \texttt{ys = z :: zs} such that \texttt{xs = y :: z :: zs}, case splitting on \texttt{x ≤ y} recurs.
+When \texttt{x ≤ y} holds, \texttt{insert} returns \texttt{x :: y :: z :: zs}.
+Sortedness requires \texttt{x ≤ y} (assumed) and \texttt{isSorted (y :: z :: zs)} (hypothesis \texttt{h\_sorted}).
+
+When \texttt{x ≤ y} fails, \texttt{insert} returns \texttt{y :: insert x (z :: zs)}.
+Sortedness requires \texttt{y ≤ (head of (insert x (z :: zs)))} and \texttt{isSorted (insert x (z :: zs))}.
+The second requirement follows from induction hypothesis application.
+The first requirement demands additional case splitting on \texttt{x ≤ z}, producing subgoals resolved via \texttt{omega} or \texttt{h\_sorted} properties.
+
+The proof demands meticulous bookkeeping.
+Sortedness assumption tracking, multiple conditional splits and precise induction hypothesis application require careful orchestration.
+While \texttt{simp} handles definition unfolding and \texttt{omega} resolves arithmetic, overall structure necessitates detailed case analysis.
+
+\subsection{Correctness theorem 2: permutation preservation}
+
+The second correctness theorem establishes that \texttt{insertionSort} returns input permutations.
+This employs the \Mathlib{} relation \texttt{List.Perm}.
+Intuitively, \texttt{xs.Perm ys} asserts that \texttt{ys} rearranges \texttt{xs} with identical elements and multiplicities.
+
+\begin{lstlisting}[caption={Permutation theorem}]
+theorem insertionSort_perm (xs : List Nat) :
+    xs.Perm (insertionSort xs) := by
+  induction xs with
+  | nil =>
+      simp [insertionSort]
+  | cons x xs ih =>
+      simp [insertionSort]
+      apply List.Perm.trans
+      · exact List.Perm.cons x ih
+      · exact insert_is_permutation (insertionSort xs) x
+\end{lstlisting}
+
+Induction structures the proof once more.
+The base case proves trivial as empty lists self-permute.
+
+Inductive case analysis targets \texttt{(x :: xs).Perm (insertionSort (x :: xs))}.
+Definitionally, \texttt{insertionSort (x :: xs)} equals \texttt{insert x (insertionSort xs)}.
+The goal becomes \texttt{(x :: xs).Perm (insert x (insertionSort xs))}.
+
+Induction hypothesis provides \texttt{xs.Perm (insertionSort xs)}.
+Construction of the desired permutation proceeds through two steps.
+
+Step 1 establishes \texttt{(x :: xs).Perm (x :: insertionSort xs)}.
+This follows from induction hypothesis via \texttt{List.Perm.cons}, which asserts that \texttt{xs.Perm ys} implies \texttt{(x :: xs).Perm (x :: ys)}.
+
+Step 2 establishes \texttt{(x :: insertionSort xs).Perm (insert x (insertionSort xs))}.
+This follows from lemma \texttt{insert\_is\_permutation}.
+
+Finally, \texttt{List.Perm.trans} chains these permutations via transitivity.
+
+The key lemma requires examination:
+
+\begin{lstlisting}[caption={Key lemma establishing insertion preserves permutation}]
+lemma insert_is_permutation (xs : List Nat) (x : Nat) :
+    (x :: xs).Perm (insert x xs) := by
+  induction xs with
+  | nil =>
+      simp [insert]
+  | cons y ys ih =>
+      simp only [insert]
+      by_cases hxy : x ≤ y
+      · simp [hxy]
+      · simp [hxy]
+        apply List.Perm.trans
+        · exact List.Perm.swap y x ys
+        · exact List.Perm.cons y ih
+\end{lstlisting}
+
+Structure parallels the sortedness lemma while reasoning differs.
+Base case analysis observes that \texttt{insert x []} equals \texttt{[x]}, trivially self-permuting.
+
+Inductive case analysis for \texttt{xs = y :: ys} splits on \texttt{x ≤ y}.
+When affirmative, \texttt{insert x (y :: ys)} equals \texttt{x :: y :: ys}, obviously self-permuting.
+
+When negative, \texttt{insert x (y :: ys)} equals \texttt{y :: insert x ys}.
+The goal becomes \texttt{(x :: y :: ys).Perm (y :: insert x ys)}.
+
+Permutation construction proceeds through two steps.
+First, swap \texttt{x} and \texttt{y} to obtain \texttt{(x :: y :: ys).Perm (y :: x :: ys)}.
+This employs lemma \texttt{List.Perm.swap}.
+Second, apply cons constructor to induction hypothesis, obtaining \texttt{(y :: x :: ys).Perm (y :: insert x ys)}.
+Transitivity chains these permutations.
+
+This exemplifies compositional permutation reasoning.
+Complex permutations emerge through composition of elementary permutation facts.
+
+\subsection{Summary of direct proofs}
+
+At this juncture, \texttt{insertionSort} correctness stands established in both dimensions.
+Output lists satisfy sortedness and input element preservation.
+
+However, the proofs exhibit significant length and recurring patterns.
+Sortedness proofs perform repeated case splits on list shapes and comparisons, employing \texttt{simp} and \texttt{omega} in analogous manners.
+Permutation proofs repeatedly utilize ``swap then cons then chain'' structures across multiple contexts.
+
+Metaprogramming addresses this repetition.
+
+\section{Metaprogramming techniques for insertion sort verification}
+
+Following completion of direct proofs, a second namespace \texttt{MacroVersion} was established.
+This namespace contains identical theorems reformulated using custom macros handling repetitive components.
+Theorem statements and logical content remain unchanged, while proof scripts achieve brevity and enhanced readability.
+
+\subsection{Tactic macro: \texttt{solve\_nil\_sorted}}
+
+The first macro addresses sortedness proof base cases.
+Empty list cases uniformly employ identical proof structure: simplification via \texttt{insert} and \texttt{isSorted} definitions.
+
+\begin{lstlisting}[caption={Macro for empty list cases}]
+macro "solve_nil_sorted" : tactic =>
+  `(tactic| simp [InsertionSort.insert, InsertionSort.isSorted])
+\end{lstlisting}
+
+This mirrors the earlier \texttt{stacks} macro structure.
+Expansion produces \texttt{simp} invocations with fixed definition lists.
+
+Application within \texttt{insert\_sorted\_macro} base cases proceeds naturally.
+
+\begin{lstlisting}[caption={Macro application in proofs}]
+lemma insert_sorted_macro (xs : List Nat) (x : Nat)
+    (h_sorted : InsertionSort.isSorted xs) :
+    InsertionSort.isSorted (InsertionSort.insert x xs) := by
+  induction xs with
+  | nil => solve_nil_sorted
+  | cons y ys ih => ...
+\end{lstlisting}
+
+\Lean{} expansion of \texttt{solve\_nil\_sorted} generates the \texttt{simp} invocation pre-elaboration.
+Semantic equivalence persists while pattern naming enhances expressiveness.
+
+\subsection{Tactic macro: \texttt{chain\_perms}}
+
+Permutation proofs repeatedly employ transitivity for chaining permutation facts.
+The pattern invariably involves \texttt{apply List.Perm.trans} followed by two subgoals supplying the chained permutations.
+
+A macro encapsulates this pattern.
+
+\begin{lstlisting}[caption={Macro for permutation chaining}]
+macro "chain_perms" h1:term "with" h2:term : tactic =>
+  `(tactic| exact List.Perm.trans $h1 $h2)
+\end{lstlisting}
+
+This macro accepts two arguments of type \texttt{term}, permitting arbitrary \Lean{} expressions.
+Expansion produces \texttt{exact List.Perm.trans \$h1 \$h2}, with dollar signs performing argument antiquotation.
+
+Application within permutation proofs streamlines tactic scripts.
+
+\begin{lstlisting}[caption={Employing the \texttt{chain\_perms} macro}]
+theorem sort_perm_macro (xs : List Nat) :
+    xs.Perm (InsertionSort.insertionSort xs) := by
+  induction xs with
+  | nil => simp [InsertionSort.insertionSort]
+  | cons x xs ih =>
+      simp [InsertionSort.insertionSort]
+      have cons_perm := List.Perm.cons x ih
+      have insert_perm := insert_perm_macro (insertionSort xs) x
+      chain_perms cons_perm with insert_perm
+\end{lstlisting}
+
+The final line \texttt{chain\_perms cons\_perm with insert\_perm} expands to \texttt{exact List.Perm.trans cons\_perm insert\_perm}.
+Semantic equivalence persists while syntax achieves superior clarity.
+
+Superiority manifests through multiple dimensions.
+First, intent becomes immediately transparent.
+Reading \texttt{chain\_perms} conveys meaning without parsing \texttt{exact} and \texttt{List.Perm.trans} syntax.
+Second, subsequent transitivity handling modifications (alternative tactics or logging addition) require only macro definition updates.
+
+\subsection{Tactic macro: \texttt{swap\_and\_cons}}
+
+The most sophisticated macro, \texttt{swap\_and\_cons}, packages a recurring two-step permutation argument.
+
+\begin{lstlisting}[caption={The \texttt{swap\_and\_cons} macro}]
+macro "swap_and_cons" y:term x:term ys:term ih:term : tactic =>
+  `(tactic| (
+    have swap := List.Perm.swap $y $x $ys;
+    have cons_ih := List.Perm.cons $y $ih;
+    exact List.Perm.trans swap cons_ih
+  ))
+\end{lstlisting}
+
+This macro accepts four arguments representing variables \texttt{y}, \texttt{x}, \texttt{ys} and \texttt{ih}.
+Expansion produces a block constructing the swap permutation, then the cons permutation, finally chaining via transitivity.
+
+Contextual usage clarifies utility.
+Within \texttt{insert\_perm\_macro}, the challenging case addresses \texttt{¬(x ≤ y)}.
+The goal requires establishing \texttt{(x :: y :: ys).Perm (y :: insert x ys)}.
+
+Without macro assistance, proof structure appears as:
+
+\begin{lstlisting}[caption={Proof without macro abstraction}]
+have swap := List.Perm.swap y x ys
+have cons_ih := List.Perm.cons y ih
+exact List.Perm.trans swap cons_ih
+\end{lstlisting}
+
+With macro abstraction, proof becomes:
+
+\begin{lstlisting}[caption={Proof with macro abstraction}]
+swap_and_cons y x ys ih
+\end{lstlisting}
+
+While length reduction appears modest, readability improvement proves substantial.
+Encountering \texttt{swap\_and\_cons} immediately conveys argument structure without parsing three tactic script lines.
+
+Critically, the macro enforces consistency.
+Ten lemmas employing this swap-and-cons pattern all apply it identically.
+Subsequent discovery of superior structuring approaches requires only macro updates, automatically propagating improvements across all invocations.
+
+\subsection{Macro for singleton lists: \texttt{solve\_single\_sorted}}
+
+The final macro addresses specific sortedness proof cases for singleton lists requiring \texttt{x ≤ y} case splits.
+
+\begin{lstlisting}[caption={The \texttt{solve\_single\_sorted} macro}]
+macro "solve_single_sorted" h:term : tactic =>
+  `(tactic| (
+    simp only [InsertionSort.insert];
+    split;
+    · simp [InsertionSort.isSorted];
+      exact $h;
+    · simp [InsertionSort.isSorted];
+      have : ¬(x ≤ y) := by assumption;
+      omega
+  ))
+\end{lstlisting}
+
+This exemplifies more complex macros generating multiple tactic steps.
+Initial simplification unfolds \texttt{insert}, conditional splitting follows, then branch-specific handling proceeds.
+
+Final proof versions omitted this macro due to imperfect structural alignment between proof cases and macro assumptions.
+Inclusion here demonstrates packaging capabilities for complex proof patterns within macros.
+
+\subsection{Advantages of macro-based proofs}
+
+Macro-based proof construction yields multiple benefits.
+
+\textbf{Benefit 1: Proof script brevity.}
+Macro versions achieve shorter length through pattern naming and reuse.
+The \texttt{chain\_perms} macro replaces three lines (\texttt{apply}, \texttt{exact}, \texttt{exact}) with singular invocation.
+
+\textbf{Benefit 2: Enhanced proof script readability.}
+Macros bear descriptive names like \texttt{solve\_nil\_sorted} and \texttt{swap\_and\_cons}.
+Reading macro-utilizing proofs reveals high level structure without low level tactic detail obscuration.
+
+\textbf{Benefit 3: Improved maintainability.}
+Subsequent algorithm or definition modifications may break proofs.
+Macro versions often permit repair through macro definition updates rather than individual proof editing.
+
+\textbf{Benefit 4: Consistency enforcement.}
+Macros ensure identical patterns receive identical handling.
+Codebase navigation simplifies while error probability decreases.
+
+These benefits appear modest in toy projects but scale dramatically.
+Production verification projects containing thousands of proof code lines demand robust abstraction boundaries for practicality.
+
+\section{Why metaprogramming is essential for verification}
+
+This project demonstrates that metaprogramming transcends convenience, representing fundamental necessity for practical software verification.
+The following analysis substantiates this claim.
+
+\subsection{The scalability challenge}
+
+Verification scaling differs fundamentally from conventional programming.
+Normal programming involving 100 functions requires 100 implementations.
+Verification involving 100 functions requires 100 implementations plus hundreds of interrelating lemmas.
+
+Consider data structures with 10 operations potentially requiring:
+\begin{itemize}
+\item 10 lemmas establishing operation invariant preservation
+\item 45 lemmas describing pairwise operation interactions (as ${10 \choose 2} = 45$)
+\item Additional lemmas for special properties including commutativity or associativity
+\end{itemize}
+
+This represents enormous proof code volume.
+Manual construction proves unrealistic at scale.
+Automation becomes mandatory.
+
+\subsection{The repetition challenge}
+
+Many lemmas exhibit structural similarity.
+Every stack operation might require lemmas asserting ``pre-operation invariant satisfaction implies post-operation invariant satisfaction''.
+Lemma statements share structure and proofs frequently share structure.
+
+Without metaprogramming, manual proof construction occurs even for near-identical cases.
+This proves tedious and error prone.
+Copy-paste operations may overlook variable name updates or introduce tactic ordering inconsistencies.
+
+Metaprogramming enables common pattern factorization.
+Tactic macros package common proof steps.
+Command macros automatically generate similar theorem families.
+Error reduction and improved maintainability follow naturally.
+
+\subsection{The maintainability challenge}
+
+Verification projects evolve continuously.
+Definition modifications for efficiency or generality improvements trigger proof breakage for dependent theorems.
+
+Low level tactic-based proofs demand tedious repair.
+Each proof requires careful reading to identify necessary modifications.
+Particularly painful scenarios involve identical patterns across numerous proofs requiring repeated identical fixes.
+
+Macro-based proofs often permit simpler repairs.
+Macro definition updates automatically propagate to all invocations.
+This parallels functional decomposition benefits in conventional programming over copy-paste approaches.
+
+\subsection{The readability challenge}
+
+Theorem prover proof scripts can achieve substantial length and complexity.
+Individual proofs may involve dozens of complex-argument tactic invocations.
+Reading such proofs obscures high level structure.
+
+Macros provide proof abstraction boundaries.
+Twenty low level tactic lines become five high level macro invocations.
+Descriptive macro names convey purpose immediately.
+Proof script comprehension and review dramatically improve.
+
+\subsection{The error prevention challenge}
+
+Manual repetition of identical patterns invites errors.
+Hypothesis omissions, incorrect tactic ordering or variable name mistakes occur frequently.
+Proof checker error messages often provide cryptic diagnostics complicating debugging.
+
+Pattern encapsulation within macros requires correctness establishment once.
+Subsequent macro invocations guarantee consistent correct pattern usage.
+Error surface area contracts significantly.
+
+Naturally, macro bugs propagate to all invocations.
+However, macros typically maintain brevity and self-containment, simplifying testing and debugging relative to lengthy proof scripts.
+
+\section{Reflections and lessons learned}
+
+\subsection{Successful approaches}
+
+\textbf{Commencing with simple examples.}
+Stacks and queues provided initial context due to straightforward verification requirements.
+This permitted metaprogramming technique focus without overwhelming proof obligation complexity.
+Following technique mastery, progression to insertion sort with more interesting proofs proceeded naturally.
+
+\textbf{Constructing direct proofs initially.}
+Direct proof construction always preceded macro development, enabling pattern identification and factorization.
+This provided clear understanding of appropriate macro behavior while permitting behavioral equivalence verification between raw and macro versions.
+
+\textbf{Employing descriptive macro nomenclature.}
+Macro names aim to describe functionality, exemplified by \texttt{solve\_nil\_sorted} or \texttt{chain\_perms}.
+This substantially improved proof script readability.
+
+\subsection{Encountered challenges}
+
+\textbf{Comprehending syntax quotation.}
+Initial confusion surrounded quotation and antiquotation syntax.
+Backtick and dollar sign notation appeared counterintuitive.
+Experimentation eventually clarified that quotations represent syntax trees rather than strings, with antiquotation performing syntax-to-syntax insertion.
+
+\textbf{Achieving correct macro typing.}
+Occasional mismatches occurred between intended tactic macros and actual term or command macro implementations.
+Error messages provided limited diagnostic utility.
+Careful attention to post-name annotations (such as \texttt{: tactic} or \texttt{: command}) proved essential.
+
+\textbf{Debugging macro expansions.}
+Macro malfunction diagnosis can prove challenging.
+Learning involved \texttt{\#check} command usage and manual paper-based macro expansion for generated code inspection.
+
+\subsection{Verification insights}
+
+\textbf{Verification transcends pure logic.}
+Pre-project understanding characterized verification primarily as correctness argument logic comprehension.
+Current understanding recognizes substantial software engineering dimensions.
+Proof organization, common pattern factorization and proof code maintainability all demand attention.
+Metaprogramming provides critical tooling for these concerns.
+
+\textbf{Proof scripts constitute code.}
+Proof scripts are not disposable artifacts.
+They form integral codebase components requiring ongoing maintenance.
+Just as function copy-pasting 10 times violates sound coding practices, proof pattern copy-pasting 10 times proves equally problematic.
+
+\textbf{Abstraction enhances correctness.}
+Conventional programming employs abstraction for complexity hiding and invariant enforcement.
+Verification benefits identically.
+Macros hide low level tactic complexity while enforcing consistent pattern handling.
+
+\section{Conclusion}
+
+This investigation examined metaprogramming for software verification within \Lean{}.
+Two case studies provided implementation context: stacks and queues, and insertion sort.
+Each case study involved correctness property proof followed by metaprogramming application for improved proof maintainability.
+
+The central conclusion establishes metaprogramming as essential for practical verification.
+Verification projects involve substantial repetitive proof work, with manual construction proving unrealistic.
+Metaprogramming enables common pattern factorization, consistency enforcement and enhanced proof code readability and maintainability.
+
+Specific employed techniques included tactic macros and command macros.
+Tactic macros packaged common proof steps with descriptive naming.
+Command macros automatically generated similar theorem families.
+Both techniques rely on syntax quotation, providing powerful code-as-data manipulation mechanisms.
+
+Looking forward, metaprogramming importance will intensify as verification tools address larger projects.
+Techniques explored in this work represent foundational starting points.
+\Lean{} supports more advanced metaprogramming features including custom elaborators and monadically-implemented tactics.
+These features enable more powerful automation necessary for real-world software verification at scale.
+
+\section*{References}
+\begin{thebibliography}{9}
+
+\bibitem{fpleaninsertion}
+Lean Prover Contributors.
+\textit{Functional Programming in Lean: Insertion Sort and Array Mutation}.
+\url{https://leanprover.github.io/functional_programming_in_lean/programs-proofs/insertion-sort.html}
+
+\bibitem{metaprogrammingbook}
+Lean Prover Community.
+\textit{The Lean 4 Metaprogramming Book}.
+\url{https://leanprover-community.github.io/lean4-metaprogramming-book/}
+
+\bibitem{metaprogrammingbookmacros}
+Lean Prover Community.
+\textit{The Lean 4 Metaprogramming Book: Macros}.
+\url{https://leanprover-community.github.io/lean4-metaprogramming-book/main/06_macros.html}
+
+\bibitem{jamesoswald}
+James Oswald.
+\textit{Insertion sort in Lean 4}.
+\url{https://jamesoswald.dev/posts/lean4-insertion-sort/}
+
+\bibitem{hitchhikers}
+Brown CS1951x course staff.
+\textit{The Hitchhiker's Guide to Logical Verification}.
+\url{https://browncs1951x.github.io/static/files/hitchhikersguide.pdf}
+
+\bibitem{leanmacrosref}
+Lean Prover Contributors.
+\textit{Lean Reference: Notations and Macros, Macros}.
+\url{https://lean-lang.org/doc/reference/latest/Notations-and-Macros/Macros/}
+
+\end{thebibliography}
+
+\end{document}

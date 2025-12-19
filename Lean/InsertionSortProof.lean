@@ -23,8 +23,7 @@ def isSorted : List Nat → Prop
 | a :: b :: rest => a ≤ b ∧ isSorted (b :: rest)
 
 
--- Correctness
-/-- Inserting into a sorted list preserves sortedness -/
+/-- inserting into a sorted list preserves sortedness -/
 lemma insert_preserves_sorted (xs : List Nat) (x : Nat)
     (h_sorted : isSorted xs) : isSorted (insert x xs) := by
   induction xs with
@@ -54,7 +53,7 @@ lemma insert_preserves_sorted (xs : List Nat) (x : Nat)
               simp only [insert, hxz, ite_false] at ih_result
               exact ⟨h1, ih_result⟩
 
-/-- Insertion sort produces a sorted list -/
+/-- insertion sort produces a sorted list -/
 theorem insertionSort_sorted (xs : List Nat) :
     isSorted (insertionSort xs) := by
   induction xs with
@@ -64,8 +63,7 @@ theorem insertionSort_sorted (xs : List Nat) :
       simp [insertionSort]
       exact insert_preserves_sorted (insertionSort xs) x ih
 
--- Completness
-/-- Inserting an element produces a permutation -/
+/-- inserting an element produces a permutation -/
 lemma insert_is_permutation (xs : List Nat) (x : Nat) :
     (x :: xs).Perm (insert x xs) := by
   induction xs with
@@ -76,14 +74,11 @@ lemma insert_is_permutation (xs : List Nat) (x : Nat) :
       by_cases hxy : x ≤ y
       · simp [hxy]
       · simp [hxy]
-        -- Show: x :: y :: ys ~ y :: insert x ys
-        -- Step 1: x :: y :: ys ~ y :: x :: ys (swap)
-        -- Step 2: y :: x :: ys ~ y :: insert x ys (cons with IH)
         apply List.Perm.trans
         · exact List.Perm.swap y x ys
         · exact List.Perm.cons y ih
 
-/-- Insertion sort produces a permutation of the input -/
+/-- insertion sort produces a permutation of the input -/
 theorem insertionSort_perm (xs : List Nat) :
     xs.Perm (insertionSort xs) := by
   induction xs with
@@ -91,9 +86,6 @@ theorem insertionSort_perm (xs : List Nat) :
       simp [insertionSort]
   | cons x xs ih =>
       simp [insertionSort]
-      -- Show: x :: xs ~ insert x (insertionSort xs)
-      -- Step 1: x :: xs ~ x :: insertionSort xs (cons with IH)
-      -- Step 2: x :: insertionSort xs ~ insert x (insertionSort xs)
       apply List.Perm.trans
       · exact List.Perm.cons x ih
       · exact insert_is_permutation (insertionSort xs) x
@@ -145,11 +137,11 @@ macro "solve_single_sorted" h:term : tactic =>
       omega
   ))
 
---  chain permutations
+-- chain permutations
 macro "chain_perms" h1:term "with" h2:term : tactic =>
   `(tactic| exact List.Perm.trans $h1 $h2)
 
--- handle permutation swap and cons (takes variables as parameters)
+-- swap and cons permutation pattern
 macro "swap_and_cons" y:term x:term ys:term ih:term : tactic =>
   `(tactic| (
     have swap := List.Perm.swap $y $x $ys;
@@ -159,7 +151,7 @@ macro "swap_and_cons" y:term x:term ys:term ih:term : tactic =>
 
 
 
-/-- Insert preserves sortedness (macro version) -/
+/-- insert preserves sortedness (macro version) -/
 lemma insert_sorted_macro (xs : List Nat) (x : Nat)
     (h_sorted : InsertionSort.isSorted xs) : InsertionSort.isSorted (InsertionSort.insert x xs) := by
   induction xs with
@@ -189,7 +181,7 @@ lemma insert_sorted_macro (xs : List Nat) (x : Nat)
               simp only [InsertionSort.insert, hxz, ite_false] at ih_result
               exact ⟨h1, ih_result⟩
 
-/-- InsertionSort produces sorted list (macro version) -/
+/-- insertion sort produces sorted list (macro version) -/
 theorem sort_sorted_macro (xs : List Nat) :
     InsertionSort.isSorted (InsertionSort.insertionSort xs) := by
   induction xs with
@@ -213,7 +205,7 @@ lemma insert_perm_macro (xs : List Nat) (x : Nat) :
         have cons_ih := List.Perm.cons y ih
         exact List.Perm.trans swap cons_ih
 
-/-- InsertionSort produces permutation (macro version) -/
+/-- insertion sort produces permutation (macro version) -/
 theorem sort_perm_macro (xs : List Nat) :
     xs.Perm (InsertionSort.insertionSort xs) := by
   induction xs with
@@ -235,7 +227,7 @@ example : [9, 3, 7, 1].Perm (InsertionSort.insertionSort [9, 3, 7, 1]) :=
   MacroVersion.sort_perm_macro [9, 3, 7, 1]
 
 
-#check InsertionSort.insertionSort_sorted    -- Original version
-#check MacroVersion.sort_sorted_macro        -- Macro version
-#check InsertionSort.insertionSort_perm      -- Original version
-#check MacroVersion.sort_perm_macro          -- Macro version
+#check InsertionSort.insertionSort_sorted    -- original version
+#check MacroVersion.sort_sorted_macro        -- macro version
+#check InsertionSort.insertionSort_perm      -- original version
+#check MacroVersion.sort_perm_macro          -- macro version
